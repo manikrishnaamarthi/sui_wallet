@@ -8,11 +8,12 @@ import {
   useSignAndExecuteTransaction,
   WalletProvider,
 } from "@mysten/dapp-kit";
-import { Transaction, coinWithBalance } from "@mysten/sui/transactions"; // Import coinWithBalance from @mysten/sui/transactions
+import { Transaction, coinWithBalance } from "@mysten/sui/transactions";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@mysten/dapp-kit/dist/index.css";
+import { FaCopy } from "react-icons/fa"; // Import copy icon
 
-
+// Network configurations
 const { networkConfig } = createNetworkConfig({
   testnet: {
     url: "https://fullnode.testnet.sui.io/",
@@ -23,8 +24,6 @@ const { networkConfig } = createNetworkConfig({
 });
 
 const queryClient = new QueryClient();
-
-// Native SUI coin type
 const SUI_TYPE = "0x2::sui::SUI";
 
 function HomeContent() {
@@ -34,12 +33,34 @@ function HomeContent() {
   const [connected, setConnected] = useState(false);
   const [amount, setAmount] = useState("");
   const [recipientAddress, setRecipientAddress] = useState("");
+  const [availableCoins, setAvailableCoins] = useState(0);
   const [txStatus, setTxStatus] = useState("");
 
   useEffect(() => {
-    setConnected(!!currentAccount);
-    console.log("Current Account:", currentAccount); // Debugging log
+    if (currentAccount) {
+      setConnected(true);
+      fetchAvailableCoins();
+    } else {
+      setConnected(false);
+      setAvailableCoins(0);
+    }
   }, [currentAccount]);
+
+  const fetchAvailableCoins = async () => {
+    try {
+      const { data: coins } = await suiClient.getCoins({
+        owner: currentAccount.address,
+        coinType: SUI_TYPE,
+      });
+      const totalBalance = coins.reduce(
+        (acc, coin) => acc + parseFloat(coin.balance),
+        0
+      );
+      setAvailableCoins(totalBalance / 1_000_000_000); // Convert to SUI units
+    } catch (error) {
+      console.error("Error fetching coins:", error);
+    }
+  };
 
   const handleSendTokens = async () => {
     if (!currentAccount || !amount || !recipientAddress) {
@@ -48,106 +69,103 @@ function HomeContent() {
     }
 
     try {
-      // Fetch SUI coins owned by the current account
-      const { data: coins } = await suiClient.getCoins({
-        owner: currentAccount.address,
-        coinType: SUI_TYPE,
-      });
-
-      console.log("Coins in wallet:", coins); // Debugging log
-
-      if (!coins || coins.length === 0) {
-        setTxStatus("No SUI coins found in your wallet");
-        return;
-      }
-
-      // Create the transaction
       const tx = new Transaction();
-
-      // Set the sender's address for the transaction
       tx.setSender(currentAccount.address);
-
-      // Convert amount to the smallest unit (MIST)
-      const amountInSmallestUnit = BigInt(parseFloat(amount) * 1_000_000_000);
-
-      console.log("Amount in smallest unit:", amountInSmallestUnit.toString()); // Debugging log
-
-      // Create a coin with the required balance
+      const amountInSmallestUnit = parseFloat(amount) * 1_000_000_000;
       const coin = coinWithBalance({ balance: amountInSmallestUnit.toString() });
-      console.log("Coin to transfer:", coin); // Debugging log
-
-      // Transfer the coin to the recipient address
       tx.transferObjects([coin], recipientAddress);
 
-      // Log transaction data
-      console.log("Transaction object:", tx);
-
-      // Sign and execute the transaction
       await signAndExecuteTransaction(
-        {
-          transaction: tx,
-        },
+        { transaction: tx },
         {
           onSuccess: (result) => {
-            console.log("Transaction result:", result);
-            setTxStatus(`Transaction successful. Digest: ${result.digest}`);
+            const digestLink = `https://suiscan.xyz/testnet/tx/${result.digest}`;
+            setTxStatus(
+              `Click the below link to view the transaction it on SuiScan: 
+              <a href="${digestLink}" target="_blank" rel="noopener noreferrer">${result.digest}</a>`
+            );
+            alert("Transaction Completed Successfully!");
           },
           onError: (error) => {
-            console.error("Error during transaction execution:", error);
             setTxStatus(`Error: ${error.message || "Transaction failed"}`);
+            alert("Transaction Failed. Please try again.");
           },
         }
       );
     } catch (error) {
-      console.error("Error sending tokens:", error);
-
-      // Enhanced error handling for node or network issues
-      if (error.response) {
-        setTxStatus(`HTTP Error: ${error.response.status} - ${error.response.statusText}`);
-      } else if (error.message.includes("502")) {
-        setTxStatus("SUI Testnet node is unavailable. Please try again later.");
-      } else {
-        setTxStatus(`Error: ${error.message || "Unknown error occurred"}`);
-      }
+      setTxStatus(`Error: ${error.message || "Unknown error occurred"}`);
+      alert("Error occurred. Please try again.");
     }
   };
+
+  const handleCopyAddress = () => {
+    if (currentAccount) {
+      navigator.clipboard.writeText(currentAccount.address);
+      alert("Address copied to clipboard!");
+    }
+  };
+
+  const shortenAddress = (address) =>
+    address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
 
   return (
     <main className="mainwrapper">
       <div className="outerwrapper">
-        <h1 className="h1">Sui Sender (Testnet)</h1>
-        <ConnectButton />
-        {connected && currentAccount && (
-          <p className="status">Connected: {currentAccount.address}</p>
-        )}
-        <div className="form">
-          <input
-            type="text"
-            placeholder="Amount (in SUI)"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="input"
-          />
-          <input
-            type="text"
-            placeholder="Recipient Address"
-            value={recipientAddress}
-            onChange={(e) => setRecipientAddress(e.target.value)}
-            className="input"
-          />
-          <button
-            onClick={handleSendTokens}
-            disabled={!connected}
-            className={`${
-              connected && amount && recipientAddress
-                ? "connected"
-                : "notconnected"
-            } transition`}
-          >
-            Send SUI
-          </button>
+        <div className="card">
+          <h1 className="h1">Sui Wallet</h1>
+          <div className="inner-card">
+            <div className="connect-box">
+              <ConnectButton />
+              {connected && currentAccount && (
+                <div className="status">
+                  Connected: {shortenAddress(currentAccount.address)}
+                  <FaCopy
+                    onClick={handleCopyAddress}
+                    className="copy-icon"
+                    style={{ cursor: "pointer", marginLeft: "8px" }}
+                    title="Copy Address"
+                  />
+                </div>
+              )}
+            </div>
+            {connected && (
+              <p style={{ fontWeight: "bold", color: "#4da1ff" }}>
+                Available SUI: {availableCoins.toFixed(4)}
+              </p>
+            )}
+            <input
+              type="text"
+              placeholder="Amount (in SUI)"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="input curved-input"
+            />
+            <input
+              type="text"
+              placeholder="Recipient Address"
+              value={recipientAddress}
+              onChange={(e) => setRecipientAddress(e.target.value)}
+              className="input curved-input"
+            />
+            <button
+              onClick={handleSendTokens}
+              disabled={!connected}
+              className={`send-button ${
+                connected && amount && recipientAddress ? "enabled" : "disabled"
+              }`}
+            >
+              Send SUI
+            </button>
+            {txStatus && (
+              <p
+                className="status"
+                dangerouslySetInnerHTML={{ __html: txStatus }}
+              ></p>
+            )}
+            
+          </div>
         </div>
-        {txStatus && <p className="status">{txStatus || "Awaiting transaction..."}</p>}
+        
       </div>
     </main>
   );
