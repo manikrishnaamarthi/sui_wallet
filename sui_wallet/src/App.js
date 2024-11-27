@@ -12,7 +12,7 @@ import { Transaction, coinWithBalance } from "@mysten/sui/transactions"; // Impo
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "@mysten/dapp-kit/dist/index.css";
 
-// Updated network configurations
+
 const { networkConfig } = createNetworkConfig({
   testnet: {
     url: "https://fullnode.testnet.sui.io/",
